@@ -1,3 +1,5 @@
+#!/usr/bin/env bats
+
 load '../stub'
 
 # Generates a temporary test file with the specified number of tests.
@@ -7,7 +9,12 @@ generate_stubbed_test_file() {
   local cmd_to_stub="$2"
   local output_file="$3"
   local bats_test_placeholder="@test"
-  echo "load '$(cd "${BATS_TEST_DIRNAME}/.." && echo "$(pwd)/stub")'" >"${output_file}"
+  # The .bash suffix must be explicit: bats-core's `load` only auto-appends
+  # it when resolving relative to BATS_TEST_DIRNAME. Bats 1.4.0's `load`
+  # (the floor this repo supports; see stub.bash's BATS_TEST_TMPDIR use)
+  # never falls back to trying an absolute path as-is, so an unsuffixed
+  # absolute path fails there with "bats: .../stub does not exist".
+  echo "load '$(cd "${BATS_TEST_DIRNAME}/.." && echo "$(pwd)/stub.bash")'" >"${output_file}"
 
   local test_number
   for test_number in $(seq 1 "${num_tests}"); do
