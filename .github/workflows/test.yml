@@ -63,7 +63,7 @@ jobs:
           assert-install: false
           detik-install: false
           file-install: false
-      - run: bats --print-output-on-failure tests
+      - run: bats tests
 
   bash-versions:
     name: bash ${{ matrix.bash-version }}
@@ -87,4 +87,4 @@ jobs:
           git clone --depth 1 --branch v1.14.0 https://github.com/bats-core/bats-core.git /tmp/bats-core
           /tmp/bats-core/install.sh /usr/local
       - run: bash --version
-      - run: bats --print-output-on-failure tests
+      - run: bats tests
