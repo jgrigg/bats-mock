@@ -1,0 +1,90 @@
+name: test
+
+# Complements .buildkite/pipeline.yml, which is our canonical CI and stays
+# untouched. This workflow exists so contributors without Buildkite access
+# (i.e. anyone outside the org) get automated feedback on their PRs.
+#
+# Supported bats-core range: >= 1.4.0 (BATS_TEST_TMPDIR, see stub.bash).
+# `.buildkite/pipeline.yml` pins 1.8.2 as the canary "oldest supported"
+# version; this workflow additionally exercises the 1.4.0 floor and the
+# latest release.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install shellcheck v0.11.0
+        run: |
+          curl -sSL "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz" \
+            | tar -xJ --strip-components=1 -C /usr/local/bin shellcheck-v0.11.0/shellcheck
+          shellcheck --version
+      - name: shellcheck binstub stub.bash tests/*
+        # Keep this file list in sync with .buildkite/pipeline.yml's
+        # shellcheck step. Must run as ONE invocation, not per-file --
+        # binstub's `# shellcheck source=stub.bash` directive only
+        # resolves (and BATS_MOCK_REAL_* only stops being flagged as
+        # unassigned) when stub.bash is passed alongside it.
+        run: shellcheck binstub stub.bash tests/*
+
+  bats:
+    name: bats ${{ matrix.bats-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        bats-version: ['1.4.0', '1.8.2', '1.14.0']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install GNU parallel (tests/concurrent_jobs.bats needs bats --jobs)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y parallel
+          # Pre-silence parallel's first-run citation prompt, which otherwise
+          # waits on stdin the first time `parallel` runs on a fresh $HOME.
+          mkdir -p ~/.parallel
+          touch ~/.parallel/will-cite
+      - uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43 # v4.0.0
+        with:
+          bats-version: ${{ matrix.bats-version }}
+          support-install: false
+          assert-install: false
+          detik-install: false
+          file-install: false
+      - run: bats --print-output-on-failure tests
+
+  bash-versions:
+    name: bash ${{ matrix.bash-version }}
+    runs-on: ubuntu-latest
+    container:
+      image: bash:${{ matrix.bash-version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.2 is macOS's shipped default and the floor this codebase targets
+        # (no associative arrays, no `${var,,}`, etc.); 5.3 is current stable.
+        bash-version: ['3.2', '4.4', '5.0', '5.2', '5.3']
+    steps:
+      - name: Install git, Node.js (actions/checkout needs it in-container), and test deps
+        run: apk add --no-cache nodejs git ncurses parallel curl bash
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Pre-silence GNU parallel's citation prompt
+        run: mkdir -p ~/.parallel && touch ~/.parallel/will-cite
+      - name: Install bats-core v1.14.0
+        run: |
+          git clone --depth 1 --branch v1.14.0 https://github.com/bats-core/bats-core.git /tmp/bats-core
+          /tmp/bats-core/install.sh /usr/local
+      - run: bash --version
+      - run: bats --print-output-on-failure tests

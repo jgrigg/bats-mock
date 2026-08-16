@@ -113,7 +113,7 @@ function teardown() {
 }
 
 @test "Check stdin" {
-  file="$(mktemp "${BATS_TMPDIR}/output.XXXXXXXX")"
+  file="$(mktemp "${BATS_TEST_TMPDIR}/output.XXXXXXXX")"
   stub curl \
     "foo : cat > '${file}'; echo 'mock output'"
   run bash -c "echo 'Some input' | curl foo"
