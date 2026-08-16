@@ -162,6 +162,15 @@ function teardown() {
   [ "$output" == "" ]
 }
 
+@test "'is not stubbed' message goes to stderr, not stdout" {
+  # The assertions above only prove the message is produced -- `run`
+  # merges stdout and stderr, so they can't tell the two apart. Bypass
+  # `run` and check the streams directly.
+  unstub non_stubbed_command 1>"${BATS_TEST_TMPDIR}/out" 2>"${BATS_TEST_TMPDIR}/err" || true
+  [ ! -s "${BATS_TEST_TMPDIR}/out" ]
+  grep -q "non_stubbed_command is not stubbed" "${BATS_TEST_TMPDIR}/err"
+}
+
 @test "Using * as parameter matches any parameter" {
   # * matches any param
   stub mycommand '* : echo OK'
@@ -334,4 +343,23 @@ function teardown() {
 
   run unstub mycommand
   [ "$status" -eq 1 ]
+}
+
+@test "Call stub with fewer arguments than expected fails, unless the missing ones are *" {
+  # A missing arg at a literal-pattern position never matches (empty !=
+  # pattern).
+  stub mycommand "foo bar : echo OK"
+  run mycommand foo
+  [ "$status" -eq 1 ]
+  [ "$output" == '' ]
+  run unstub mycommand
+  [ "$status" -eq 1 ]
+
+  # But * never inspects the argument at all -- an upper bound on count,
+  # not a presence requirement.
+  stub mycommand "foo * : echo OK"
+  run mycommand foo
+  [ "$status" -eq 0 ]
+  [ "$output" == 'OK' ]
+  unstub mycommand
 }
