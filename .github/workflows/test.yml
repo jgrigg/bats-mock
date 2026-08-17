@@ -88,3 +88,31 @@ jobs:
           /tmp/bats-core/install.sh /usr/local
       - run: bash --version
       - run: bats tests
+
+  macos:
+    name: macOS (bats ${{ matrix.bats-version }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Floor + latest only -- macOS runners are the slowest/priciest;
+        # this job's value is exercising real BSD userland, not
+        # re-sweeping bats-core versions (the `bats` job already does that).
+        bats-version: ['1.4.0', '1.14.0']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install GNU parallel (tests/concurrent_jobs.bats needs bats --jobs)
+        run: |
+          brew install parallel
+          # Pre-silence parallel's first-run citation prompt (else it waits on stdin).
+          mkdir -p ~/.parallel
+          touch ~/.parallel/will-cite
+      - name: Install bats-core ${{ matrix.bats-version }}
+        run: |
+          git clone --depth 1 --branch "v${{ matrix.bats-version }}" https://github.com/bats-core/bats-core.git /tmp/bats-core
+          /tmp/bats-core/install.sh /usr/local
+      # Deliberately using the runner's own default bash (Apple's frozen
+      # 3.2.57), not Homebrew's newer one -- this job's whole point is
+      # validating against what an actual macOS user's shell looks like.
+      - run: bash --version
+      - run: bats tests
