@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2329  # only called from an eval'd plan string
 set -e
 
 # Assume failure of stubbed command
@@ -26,6 +27,23 @@ debug() {
   if [ -n "${!_STUB_DEBUG-}" ] ; then
     echo "bats-mock($program): $*" >&"${!_STUB_DEBUG}"
   fi
+}
+
+# Deliberately not export -f'd -- would leak into every command a plan
+# spawns, not just its own eval context.
+inspect_args() {
+  local arg
+  local sep=''
+  for arg; do
+    if [[ $arg == *' '* ]]; then
+      printf '%s"%s"' "$sep" "${arg//\"/\\\"}"
+    elif [[ $arg == *'"'* ]]; then
+      printf "%s'%s'" "$sep" "$arg"
+    else
+      printf '%s%s' "$sep" "$arg"
+    fi
+    sep=" "
+  done
 }
 
 [ -e "${!_STUB_PLAN}" ] || exit 1
