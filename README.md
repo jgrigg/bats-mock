@@ -77,7 +77,9 @@ The plan is verified, one by one, as the calls come in, but the final check that
 
 Once the test case is done, you should call `unstub <program>` in order to clean up the temporary files, and make a final check that all the plans have been met for the stub.
 
-By default, `unstub`-ing a program that was never actually `stub`-bed (or was already `unstub`-bed) is itself a failure — it prints `<program> is not stubbed` to stderr and returns 1. If that's expected (e.g. a `teardown` that unconditionally cleans up a stub some earlier test path might not have touched), pass `--allow-missing` as the first argument: `unstub --allow-missing <program>`. Note this only suppresses that specific "never stubbed" case — if the program *was* stubbed and its plan wasn't fulfilled, `unstub --allow-missing` still fails; `--allow-missing` is not a way to skip plan verification.
+By default, `unstub`-ing a program that was never actually `stub`-bed (or was already `unstub`-bed) is itself a failure — it prints `<program> is not stubbed` to stderr and returns 1. If that's expected (e.g. a `teardown` that unconditionally cleans up a stub some earlier test path might not have touched), pass `--allow-missing`: `unstub --allow-missing <program>`. Note this only suppresses that specific "never stubbed" case — if the program *was* stubbed and its plan wasn't fulfilled, `unstub --allow-missing` still fails; `--allow-missing` is not a way to skip plan verification.
+
+For that, there's `--force`: `unstub --force <program>` skips plan verification entirely and always returns 0, regardless of whether the program was ever stubbed, ever invoked, or invoked in a way that didn't match its plan. Cleanup (removing the stub's symlink and state files) still happens as normal. Useful for a `teardown` that just wants stubs gone without asserting anything about how the test used them. `--force` and `--allow-missing` compose in either order if you want both, though `--force` alone already covers everything `--allow-missing` does.
 
 ### Verifying stub input
 

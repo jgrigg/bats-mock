@@ -40,10 +40,14 @@ stub() {
 
 unstub() {
   local allow_missing=0
-  if [ "$1" == "--allow-missing" ]; then
-    allow_missing=1
+  local force=0
+  while [ "$1" == "--allow-missing" ] || [ "$1" == "--force" ]; do
+    case "$1" in
+      --allow-missing) allow_missing=1 ;;
+      --force) force=1 ;;
+    esac
     shift
-  fi
+  done
   local program="$1"
   local path="${BATS_MOCK_BINDIR}/${program}"
   local prefix
@@ -60,7 +64,11 @@ unstub() {
   export "${prefix}_STUB_END"=1
 
   local STATUS=0
-  if [ -f "$path" ]; then
+  if [ $force -eq 1 ]; then
+    : # --force: skips verification entirely -- also forgives an
+      # unfulfilled plan (unlike --allow-missing); binstub never runs,
+      # so no debug output either.
+  elif [ -f "$path" ]; then
     "$path" || STATUS="$?"
   elif [ $allow_missing -eq 0 ]; then
     echo "$program is not stubbed" >&2
