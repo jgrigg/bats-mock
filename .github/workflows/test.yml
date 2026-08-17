@@ -108,11 +108,10 @@ jobs:
           mkdir -p ~/.parallel
           touch ~/.parallel/will-cite
       - name: Install bats-core ${{ matrix.bats-version }}
+        # sudo: macos-latest is Apple Silicon (Homebrew at /opt/homebrew),
+        # so /usr/local is root-owned and not runner-writable.
         run: |
           git clone --depth 1 --branch "v${{ matrix.bats-version }}" https://github.com/bats-core/bats-core.git /tmp/bats-core
-          /tmp/bats-core/install.sh /usr/local
-      # Deliberately using the runner's own default bash (Apple's frozen
-      # 3.2.57), not Homebrew's newer one -- this job's whole point is
-      # validating against what an actual macOS user's shell looks like.
+          sudo /tmp/bats-core/install.sh /usr/local
       - run: bash --version
       - run: bats tests
