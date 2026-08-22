@@ -273,6 +273,8 @@ An empty plan (`stub foo` with no plan lines at all) means "must not be called" 
 
 If you stub functions, make sure to unset them, or the stub script won't be called, as the function will shadow the binstub script on the `PATH`.
 
+Shell builtins (`read`, `cd`, `test`, `[`, etc.) can't be stubbed at all — builtins are resolved before `PATH` is ever consulted, so the `binstub` symlink is never reached. Wrap the builtin in your own function and stub that instead, or test its effects through an external command.
+
 ## Credits
 
 Forked from https://github.com/jasonkarns/bats-mock originally with thanks to [@jasonkarns](https://github.com/jasonkarns).
