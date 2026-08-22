@@ -264,7 +264,9 @@ Its single plan line is checked on every call rather than advancing to the next 
 
 ## Troubleshooting
 
-It can be difficult to figure out why your mock has failed. You can enable debugging by setting an environment variable named after the command being stubbed (all in underscore-separated, uppercase) with the `STUB_DEBUG` suffix. The value of the variable needs to be a device or already-open file descriptor where to redirect the debugging output.
+When `unstub` fails, it prints why on stderr by default: which plan lines were never reached, and which calls didn't match a plan line (with the actual arguments received). `unstub --force` skips this, same as it skips everything else.
+
+For anything that message doesn't explain, you can enable more detailed debugging by setting an environment variable named after the command being stubbed (all in underscore-separated, uppercase) with the `STUB_DEBUG` suffix. The value of the variable needs to be a device or already-open file descriptor where to redirect the debugging output.
 
 A numeric value (e.g. `3`) duplicates that file descriptor — bats itself keeps fd 3 open as its own diagnostic channel, so routing debug output there tends to show up alongside bats' own output. Don't `exec 3>`/`exec 3>&-` a numeric fd yourself, though: bats relies on fd 3 staying open for its own TAP output, and closing it out from under bats will break later tests in the same run with "Bad file descriptor". Use any other already-open fd, or point `STUB_DEBUG` at a real file path (e.g. `/dev/tty`) instead — but note that a file path is opened fresh (truncated) on *every* debug line, so only the most recent line survives; it's meant for interactively watching a single point of failure, not for accumulating a log.
 
