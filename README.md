@@ -245,6 +245,23 @@ function install() {
 }
 ```
 
+### Repeated Stubbing
+
+Use `stub_repeated` instead of `stub` when a command is called an arbitrary, unknown number of times with the same arguments, rather than a fixed sequence:
+
+```bash
+@test "retries until it succeeds" {
+  stub_repeated curl "example.com : echo body"
+
+  run retry_until_success curl example.com
+
+  [ "$status" -eq 0 ]
+  unstub curl
+}
+```
+
+Its single plan line is checked on every call rather than advancing to the next line each time, so it's satisfied by zero, one, or any number of matching invocations — `unstub` never fails for being "unconsumed" the way a plain `stub` would. It only accepts one plan line; a second line passed to `stub_repeated` is never reached.
+
 ## Troubleshooting
 
 It can be difficult to figure out why your mock has failed. You can enable debugging by setting an environment variable named after the command being stubbed (all in underscore-separated, uppercase) with the `STUB_DEBUG` suffix. The value of the variable needs to be a device or already-open file descriptor where to redirect the debugging output.
