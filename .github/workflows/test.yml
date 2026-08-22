@@ -1,13 +1,8 @@
 name: test
 
-# Complements .buildkite/pipeline.yml, which is our canonical CI and stays
-# untouched. This workflow exists so contributors without Buildkite access
-# (i.e. anyone outside the org) get automated feedback on their PRs.
-#
-# Supported bats-core range: >= 1.4.0 (BATS_TEST_TMPDIR, see stub.bash).
-# `.buildkite/pipeline.yml` pins 1.8.2 as the canary "oldest supported"
-# version; this workflow additionally exercises the 1.4.0 floor and the
-# latest release.
+# Complements .buildkite/pipeline.yml (canonical CI, untouched) -- gives
+# contributors without Buildkite access automated feedback on PRs.
+# Targets bats-core >= 1.4.0 (BATS_TEST_TMPDIR; see stub.bash).
 on:
   push:
     branches: [master]
@@ -32,11 +27,10 @@ jobs:
             | tar -xJ --strip-components=1 -C /usr/local/bin shellcheck-v0.11.0/shellcheck
           shellcheck --version
       - name: shellcheck binstub stub.bash tests/*
-        # Keep this file list in sync with .buildkite/pipeline.yml's
-        # shellcheck step. Must run as ONE invocation, not per-file --
-        # binstub's `# shellcheck source=stub.bash` directive only
-        # resolves (and BATS_MOCK_REAL_* only stops being flagged as
-        # unassigned) when stub.bash is passed alongside it.
+        # Must run as ONE invocation, not per-file: binstub's
+        # `source=stub.bash` directive and BATS_MOCK_REAL_* only resolve
+        # when stub.bash is passed alongside it. Keep in sync with
+        # .buildkite/pipeline.yml's shellcheck step.
         run: shellcheck binstub stub.bash tests/*
 
   bats:
@@ -52,8 +46,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y parallel
-          # Pre-silence parallel's first-run citation prompt, which otherwise
-          # waits on stdin the first time `parallel` runs on a fresh $HOME.
+          # Pre-silence parallel's first-run citation prompt (else it waits on stdin).
           mkdir -p ~/.parallel
           touch ~/.parallel/will-cite
       - uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43 # v4.0.0
@@ -73,8 +66,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.2 is macOS's shipped default and the floor this codebase targets
-        # (no associative arrays, no `${var,,}`, etc.); 5.3 is current stable.
+        # 3.2 is macOS's default and this codebase's floor (no assoc
+        # arrays, no ${var,,}); 5.3 is current stable.
         bash-version: ['3.2', '4.4', '5.0', '5.2', '5.3']
     steps:
       - name: Install git, Node.js (actions/checkout needs it in-container), and test deps

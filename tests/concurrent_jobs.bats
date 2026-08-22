@@ -9,11 +9,9 @@ generate_stubbed_test_file() {
   local cmd_to_stub="$2"
   local output_file="$3"
   local bats_test_placeholder="@test"
-  # The .bash suffix must be explicit: bats-core's `load` only auto-appends
-  # it when resolving relative to BATS_TEST_DIRNAME. Bats 1.4.0's `load`
-  # (the floor this repo supports; see stub.bash's BATS_TEST_TMPDIR use)
-  # never falls back to trying an absolute path as-is, so an unsuffixed
-  # absolute path fails there with "bats: .../stub does not exist".
+  # The .bash suffix must be explicit: bats-core 1.4.0's load() doesn't
+  # auto-append it for an absolute path (only for BATS_TEST_DIRNAME-relative
+  # ones), so an unsuffixed absolute path fails there.
   echo "load '$(cd "${BATS_TEST_DIRNAME}/.." && echo "$(pwd)/stub.bash")'" >"${output_file}"
 
   local test_number
