@@ -51,7 +51,7 @@ function teardown() {
   # and they also make unstubbing fail to fail the whole command
   run unstub mycommand
   [ "$status" -eq 1 ]
-  [[ "$output" == "" ]]
+  [[ "$output" == *"no plan line was found"* ]]
 }
 
 @test "Stub a single command with quoted strings" {
@@ -96,7 +96,7 @@ function teardown() {
   mycommand --help || true # Don't fail here
   run unstub mycommand
   [ "$status" -eq 1 ]
-  [ "$output" == "" ]
+  [[ "$output" == *"no plan line was found"* ]]
 }
 
 @test "Fail if called out of sequence" {
@@ -109,6 +109,34 @@ function teardown() {
   [ "$output" == "OK" ]
   run unstub mycommand
   [ "$status" -eq 1 ]
+  [[ "$output" == *"baz -- didn't match plan line 2"* ]]
+  [[ "$output" == *"bar -- didn't match plan line 3"* ]]
+}
+
+@test "unstub reports plan lines never reached" {
+  stub mycommand \
+    "foo : echo OK" \
+    "bar : echo 1K"
+  run mycommand foo
+  run unstub mycommand
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"missing call(s), plan line(s) never reached:"* ]]
+  [[ "$output" == *"bar : echo 1K"* ]]
+}
+
+@test "unstub's default failure report goes to stderr, not stdout" {
+  stub mycommand "foo : echo OK"
+  run mycommand bar
+  unstub mycommand 1>"${BATS_TEST_TMPDIR}/out" 2>"${BATS_TEST_TMPDIR}/err" || true
+  [ ! -s "${BATS_TEST_TMPDIR}/out" ]
+  grep -q "didn't match plan line 1" "${BATS_TEST_TMPDIR}/err"
+}
+
+@test "a successful unstub prints no diagnostic" {
+  stub mycommand "foo : echo OK"
+  run mycommand foo
+  run unstub mycommand
+  [ "$status" -eq 0 ]
   [ "$output" == "" ]
 }
 

@@ -23,6 +23,7 @@ _STUB_NOINDEX="${PROGRAM}_STUB_NOINDEX"
 _STUB_RESULT="${PROGRAM}_STUB_RESULT"
 _STUB_END="${PROGRAM}_STUB_END"
 _STUB_DEBUG="${PROGRAM}_STUB_DEBUG"
+_STUB_ERRORS="${PROGRAM}_STUB_ERRORS"
 
 debug() {
   if [ -n "${!_STUB_DEBUG-}" ] ; then
@@ -49,6 +50,7 @@ inspect_args() {
 
 [ -e "${!_STUB_PLAN}" ] || exit 1
 [ -n "${!_STUB_RUN}" ] || eval "${_STUB_RUN}"="${BATS_MOCK_TMPDIR}/${program}-stub-run"
+[ -n "${!_STUB_ERRORS}" ] || eval "${_STUB_ERRORS}"="${BATS_MOCK_TMPDIR}/${program}-stub-errors"
 
 # Initialize or load the stub run information.
 eval "${_STUB_INDEX}"=1
@@ -67,8 +69,10 @@ target_index="${!_STUB_INDEX}"
 [ -z "${!_STUB_NOINDEX}" ] || target_index=1
 index=0
 match_found=0
+plan_lines=()
 while IFS= read -r line; do
   index=$((index + 1))
+  plan_lines+=("$line")
 
   # debug "bats-mock: [idx $index, want ${!_STUB_INDEX}] $line"
 
@@ -157,6 +161,22 @@ if [ -n "${!_STUB_END}" ]; then
     eval "${_STUB_RESULT}"=1
   fi
 
+  # Report why, unconditionally -- otherwise a failure here is a bare
+  # `unstub 'foo' failed` unless STUB_DEBUG happened to be set already.
+  if [ "${!_STUB_RESULT}" -ne 0 ]; then
+    {
+      if [ -z "${!_STUB_NOINDEX}" ] && [ "${!_STUB_INDEX}" -le "$index" ]; then
+        echo "${program}: missing call(s), plan line(s) never reached:"
+        for (( i="${!_STUB_INDEX}"; i<=index; i++ )); do
+          echo "  ${plan_lines[$((i - 1))]}"
+        done
+      fi
+      [ ! -s "${!_STUB_ERRORS}" ] || { echo "${program}: unexpected call(s):"; cat "${!_STUB_ERRORS}"; }
+    } >&2
+  fi
+
+  "$BATS_MOCK_REAL_rm" -f "${!_STUB_ERRORS}"
+
   # Return the result.
   exit "${!_STUB_RESULT}"
 else
@@ -173,6 +193,14 @@ else
     debug "no plan row found"
     eval "${_STUB_RESULT}"=1
   fi
+
+  # Record what unstub's default failure report will need -- the plan
+  # file only has patterns, not what was actually passed on a bad call.
+  case $match_found in
+    0) echo "  $(inspect_args "$@") -- no plan line was found (called more times than planned)" >> "${!_STUB_ERRORS}" ;;
+    2) echo "  $(inspect_args "$@") -- didn't match plan line ${target_index} ($line)" >> "${!_STUB_ERRORS}" ;;
+    3) echo "  $(inspect_args "$@") -- more arguments than plan line ${target_index} expects ($line)" >> "${!_STUB_ERRORS}" ;;
+  esac
 
   # Write out the run information. A repeated stub's index never
   # advances -- the same line is checked again on the next call.
