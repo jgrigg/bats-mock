@@ -162,6 +162,60 @@ function teardown() {
   [ "$output" == "" ]
 }
 
+@test "--force skips plan verification entirely, unlike --allow-missing" {
+  # --allow-missing does NOT forgive an unfulfilled plan on a stub that
+  # DOES exist (only a never-created one) -- confirmed before showing
+  # what --force adds.
+  stub mycommand "foo : echo OK"
+  run mycommand bar # mismatch: plan expects "foo"
+  [ "$status" -eq 1 ]
+  run unstub --allow-missing mycommand
+  [ "$status" -eq 1 ]
+
+  # --force does forgive it.
+  stub mycommand "foo : echo OK"
+  run mycommand bar
+  [ "$status" -eq 1 ]
+  run unstub --force mycommand
+  [ "$status" -eq 0 ]
+  [ "$output" == "" ]
+}
+
+@test "--force also covers a never-invoked stub and a never-stubbed program" {
+  stub mycommand "foo : echo OK"
+  run unstub --force mycommand
+  [ "$status" -eq 0 ]
+
+  run unstub --force totally_unknown_command
+  [ "$status" -eq 0 ]
+  [ "$output" == "" ]
+}
+
+@test "--force and --allow-missing compose in either order" {
+  run unstub --force --allow-missing totally_unknown_command
+  [ "$status" -eq 0 ]
+  run unstub --allow-missing --force totally_unknown_command
+  [ "$status" -eq 0 ]
+}
+
+@test "--force still cleans up the stub's symlink and state files" {
+  stub mycommand "foo : echo OK"
+  run mycommand bar
+  run unstub --force mycommand
+  [ "$status" -eq 0 ]
+  [ ! -e "${BATS_MOCK_BINDIR}/mycommand" ]
+  [ ! -e "${BATS_MOCK_TMPDIR}/mycommand-stub-plan" ]
+  [ ! -e "${BATS_MOCK_TMPDIR}/mycommand-stub-run" ]
+}
+
+@test "'is not stubbed' message goes to stderr, not stdout" {
+  # `run` merges stdout/stderr, so it can't tell them apart -- bypass it
+  # and check the streams directly.
+  unstub non_stubbed_command 1>"${BATS_TEST_TMPDIR}/out" 2>"${BATS_TEST_TMPDIR}/err" || true
+  [ ! -s "${BATS_TEST_TMPDIR}/out" ]
+  grep -q "non_stubbed_command is not stubbed" "${BATS_TEST_TMPDIR}/err"
+}
+
 @test "Using * as parameter matches any parameter" {
   # * matches any param
   stub mycommand '* : echo OK'
@@ -334,4 +388,23 @@ function teardown() {
 
   run unstub mycommand
   [ "$status" -eq 1 ]
+}
+
+@test "Call stub with fewer arguments than expected fails, unless the missing ones are *" {
+  # A missing arg at a literal-pattern position never matches (empty !=
+  # pattern).
+  stub mycommand "foo bar : echo OK"
+  run mycommand foo
+  [ "$status" -eq 1 ]
+  [ "$output" == '' ]
+  run unstub mycommand
+  [ "$status" -eq 1 ]
+
+  # But * never inspects the argument at all -- an upper bound on count,
+  # not a presence requirement.
+  stub mycommand "foo * : echo OK"
+  run mycommand foo
+  [ "$status" -eq 0 ]
+  [ "$output" == 'OK' ]
+  unstub mycommand
 }

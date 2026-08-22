@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2329  # only called from an eval'd plan string
 set -e
 
 # Assume failure of stubbed command
@@ -18,6 +19,7 @@ fi
 _STUB_PLAN="${PROGRAM}_STUB_PLAN"
 _STUB_RUN="${PROGRAM}_STUB_RUN"
 _STUB_INDEX="${PROGRAM}_STUB_INDEX"
+_STUB_NOINDEX="${PROGRAM}_STUB_NOINDEX"
 _STUB_RESULT="${PROGRAM}_STUB_RESULT"
 _STUB_END="${PROGRAM}_STUB_END"
 _STUB_DEBUG="${PROGRAM}_STUB_DEBUG"
@@ -26,6 +28,23 @@ debug() {
   if [ -n "${!_STUB_DEBUG-}" ] ; then
     echo "bats-mock($program): $*" >&"${!_STUB_DEBUG}"
   fi
+}
+
+# Deliberately not export -f'd -- would leak into every command a plan
+# spawns, not just its own eval context.
+inspect_args() {
+  local arg
+  local sep=''
+  for arg; do
+    if [[ $arg == *' '* ]]; then
+      printf '%s"%s"' "$sep" "${arg//\"/\\\"}"
+    elif [[ $arg == *'"'* ]]; then
+      printf "%s'%s'" "$sep" "$arg"
+    else
+      printf '%s%s' "$sep" "$arg"
+    fi
+    sep=" "
+  done
 }
 
 [ -e "${!_STUB_PLAN}" ] || exit 1
@@ -42,6 +61,10 @@ if [ -z "${!_STUB_END}" ]; then
 fi
 
 # Loop over each line in the plan.
+# stub_repeated pins the target at line 1 forever, instead of advancing
+# with each call -- that one line then matches any number of invocations.
+target_index="${!_STUB_INDEX}"
+[ -z "${!_STUB_NOINDEX}" ] || target_index=1
 index=0
 match_found=0
 while IFS= read -r line; do
@@ -49,7 +72,7 @@ while IFS= read -r line; do
 
   # debug "bats-mock: [idx $index, want ${!_STUB_INDEX}] $line"
 
-  if [ -z "${!_STUB_END}" ] && [ $index -eq "${!_STUB_INDEX}" ]; then
+  if [ -z "${!_STUB_END}" ] && [ $index -eq "$target_index" ]; then
     # We found the plan line we're interested in.
     # Start off by assuming success.
     match_found=1
@@ -128,8 +151,9 @@ if [ -n "${!_STUB_END}" ]; then
   "$BATS_MOCK_REAL_rm" -f "${!_STUB_RUN}"
 
   # If the number of lines in the plan is larger than
-  # the requested index, we failed.
-  if [ $index -ge "${!_STUB_INDEX}" ]; then
+  # the requested index, we failed. A repeated stub's single line is
+  # never "unconsumed" -- it's meant to be reusable, not fulfilled once.
+  if [ -z "${!_STUB_NOINDEX}" ] && [ $index -ge "${!_STUB_INDEX}" ]; then
     eval "${_STUB_RESULT}"=1
   fi
 
@@ -150,8 +174,11 @@ else
     eval "${_STUB_RESULT}"=1
   fi
 
-  # Write out the run information.
-  { echo "${_STUB_INDEX}=$((${!_STUB_INDEX} + 1))"
+  # Write out the run information. A repeated stub's index never
+  # advances -- the same line is checked again on the next call.
+  next_index="${!_STUB_INDEX}"
+  [ -n "${!_STUB_NOINDEX}" ] || next_index=$((next_index + 1))
+  { echo "${_STUB_INDEX}=${next_index}"
     echo "${_STUB_RESULT}=${!_STUB_RESULT}"
   } > "${!_STUB_RUN}"
 

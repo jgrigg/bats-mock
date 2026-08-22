@@ -27,7 +27,7 @@ load helpers/mocks/stub
 After loading `bats-mock/stub` you have two new functions defined:
 
 - `stub`: for creating new stubs, along with a plan with expected args and the results to return when called.
-- `unstub`: for cleaning up, and also verifying that the plan was fullfilled.
+- `unstub`: for cleaning up, and also verifying that the plan was fulfilled.
 
 ### Stubbing
 
@@ -69,13 +69,17 @@ teardown() {
 }
 ```
 
-This verifies that `format_date` indeed called `date` using the args defined in each specified stub, and made proper use of the output of it. Note that `\* will match any **one** argument.
+This verifies that `format_date` indeed called `date` using the args defined in each specified stub, and made proper use of the output of it. Note that `\*` matches whatever is at that argument position, including a missing one — it does not require an argument to be present.
 
 The plan is verified, one by one, as the calls come in, but the final check that there are no remaining un-met plans at the end is left until the stub is removed with `unstub`.
 
 ### Unstubbing
 
 Once the test case is done, you should call `unstub <program>` in order to clean up the temporary files, and make a final check that all the plans have been met for the stub.
+
+`unstub --allow-missing <program>` tolerates a program that was never stubbed, or was already unstubbed, which otherwise fails with `<program> is not stubbed`. It does not skip plan verification: a program that *was* stubbed and whose plan went unfulfilled still fails.
+
+`unstub --force <program>` does skip verification entirely and always succeeds, while still cleaning up as normal. The two flags compose in either order.
 
 ### Verifying stub input
 
@@ -113,22 +117,41 @@ If you want to verify that your stub was called with the correct arguments, you 
 }
 ```
 
+To check them all at once instead of by position, `inspect_args "$@"` formats the whole argument list as one string, space-separated, double-quoting any argument containing a space:
+
+```bash
+stub curl "-X \* \* : echo \$(inspect_args \"\$@\") > ${_TMP_DIR}/curl-args"
+```
+
+It is a plain shell function, not exported, so it is not visible to a nested `bash -c` that the plan command spawns.
+
+### Using a function as the plan command
+
+A plan's command can call a function instead of a literal command. The function must be exported: the stub runs as a separate process, so it only sees functions you've explicitly exported.
+
+```bash
+respond() { echo '{"result": "ok"}'; }
+export -f respond
+
+stub curl "-X \* \* : respond \"\$@\""
+```
+
+Forward arguments with `"$@"` if the function needs them. Avoid calling the command you're stubbing from inside the function — it resolves back through the stub's own `PATH` entry and recurses.
+
 ### Accepting any (or no) arguments
 
-Sometimes the argument is too complicated to determine in advance or it would make the stubbing really long and convoluted. In those cases you can use `\*` to ensure that an argument is given.
+Sometimes the argument is too complicated to determine in advance, or it would make the stubbing really long and convoluted. In those cases you can use `\*` as a placeholder for one argument position — it matches whatever is there, including nothing at all. Only passing *more* arguments than the line declares makes the call fail to match.
 
 ```bash
 @test "send_message" {
-
-	stub grep \
+  stub grep \
     '\* \* : echo OK' \
     '\* \* : echo OK'
 
-  # matches because there are exactly 2 arguments
+  # matches: up to 2 arguments are accepted
   grep "$complicated_pattern" /home/user/file
-  # this does not because there are 3 arguments :(
+  # does not match: 3 arguments, more than the 2 declared :(
   grep -ri "$complicated_pattern" /home/user/file
-
 }
 ```
 
@@ -136,20 +159,20 @@ If you do not care about the amount of arguments, not having any colons whatsoev
 
 ```bash
 @test "send_message" {
-
-	stub grep \
+  stub grep \
     'exit 0' \
     'exit 1' \
     'exit 2'
-  
+
   # Will match the first stub line and exit with code 0
   grep "$complicated_pattern" /home/user/file
 
-  # Matches the second one and exits witch code 1
+  # Matches the second one and exits with code 1
   grep -E -i "$some_pattern" "$some_file"
 
   # No arguments also match, the third one exits with code 2 :)
   grep
+}
 ```
 
 If you want to ensure no arguments whatsoever, you add a single colon at the very beginning:
@@ -160,28 +183,29 @@ If you want to ensure no arguments whatsoever, you add a single colon at the ver
   stub cat ': echo "OK"'
   ! cat foo # `cat` stub fails as an argument was passed
 
-  # But don't forget the space!
+  # But don't forget the space! Without it `stub` receives one argument --
+  # a program named `cat:echo "OK"` -- and never stubs `cat` at all.
   stub cat':echo "OK"'
-  # Will accept any arguments and execute `:echo "OK"` -> Fails
-  !cat foo # command `:echo` not found
+  cat foo # runs the real cat, which fails: no such file
 
   # If your command contains ' : ' just start with double-colon
   stub cat '::echo "Hello : World"'
   # Prints "Hello : World"
   cat foo bar
+}
 ```
 
 ### Incremental Stubbing
 
 In some case it might be preferable to define the invocation plan incrementally to mirror the actual behavior of the program under test.
-This can be done by invocing `stub` multiple times with the same command.   
-In case you want to to start with a new plan call `unstub` first.
+This can be done by invoking `stub` multiple times with the same command.
+In case you want to start with a new plan call `unstub` first.
 
 ```bash
 # Function to test
 function install() {
   apt-get update
-  pt-add-repository -y myrepo
+  apt-add-repository -y myrepo
   apt-get update
 }
 
@@ -195,9 +219,21 @@ function install() {
 }
 ```
 
+### Repeated Stubbing
+
+`stub_repeated` takes a single plan line that matches any number of invocations — zero, one, or many — instead of one line per expected call:
+
+```bash
+stub_repeated curl "example.com : echo body"
+```
+
+The line is re-checked on every call rather than advancing, so `unstub` never fails it as unconsumed. Only one plan line is used; a second is never reached.
+
 ## Troubleshooting
 
-It can be difficult to figure out why your mock has failed. You can enable debugging setting an environment variable called after the command being stubbed (all in underscore-separeted, uppercase) with the `STUB_DEBUG` suffix. The value of the variable needs to be a device or file descriptor where to redirect the debugging output. Recommended value is `3`, which should make the output compatible with tap's expectation but you can also use `/dev/tty`.
+It can be difficult to figure out why your mock has failed. You can enable debugging by setting an environment variable named after the command being stubbed (all in underscore-separated, uppercase) with the `STUB_DEBUG` suffix. The value of the variable needs to be a device or already-open file descriptor where to redirect the debugging output.
+
+Note that bats keeps fd 3 open for its own output, so don't close it yourself; and a file path is truncated on every write, leaving only the most recent line.
 
 If you have stubbed the `date` command, you can do something like:
 
@@ -209,13 +245,19 @@ export DATE_STUB_DEBUG=3
 
 (You may want to know this, if you get weird results there may be stray files lingering about messing with your state.)
 
-Under the covers, `bats-mock` uses three scripts to manage the stubbed programs/functions.
+Under the covers, `bats-mock` is two scripts (`stub.bash`, which you `load`, and `binstub`, which does the actual matching) plus, per stub, two state files that `binstub` manages.
 
 First, it is the command (or program) itself, which when the stub is created is placed in (or rather, the `binstub` script is sym-linked to) `${BATS_MOCK_BINDIR}/${program}` (which is added to your `PATH` when loading the stub library). Secondly, it creates a stub plan, based on the arguments passed when creating the stub, and finally, during execution, the command invocations are tracked in a stub run file which is checked once the command is `unstub`'ed. The `${program}-stub-[plan|run]` files are both in `${BATS_MOCK_TMPDIR}`.
 
+`BATS_MOCK_TMPDIR` is `$BATS_TEST_TMPDIR`, so stub state is isolated per test, which is what makes it safe under `bats --jobs`. This requires bats-core >= 1.4.0.
+
+An empty plan (`stub foo` with no plan lines) means "must not be called". Argument patterns are parsed with `eval` under `set -f`, which is what lets quoted patterns containing spaces work — but it also means `$variables` and `$(command substitutions)` in a pattern are expanded. Keep that in mind for patterns that aren't literals you wrote.
+
 ### Caveat
 
-If you stub functions, make sure to unset them, or the stub script wan't be called, as the function will shadow the binstub script on the `PATH`.
+If you stub functions, make sure to unset them, or the stub script won't be called, as the function will shadow the binstub script on the `PATH`.
+
+Shell builtins (`read`, `cd`, `test`, etc.) can't be stubbed: builtins are resolved before `PATH` is consulted, so the `binstub` symlink is never reached. Wrap the builtin in your own function and stub that instead.
 
 ## Credits
 
