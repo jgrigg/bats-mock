@@ -115,6 +115,23 @@ If you want to verify that your stub was called with the correct arguments, you 
 }
 ```
 
+For a quick sanity check across all of them at once rather than picking out individual positions, `inspect_args "$@"` formats the full argument list as a single string (space-separated, double-quoting any argument that itself contains a space). Note the escaped `\$(...)`, same as with `\$1`/`\$2` above — it needs to be deferred to when the stub is actually invoked, not expanded immediately by the shell that's setting up the stub:
+
+```bash
+@test "send_message" {
+  stub curl \
+    "-X * * : echo \$(inspect_args \"\$@\") > ${BATS_TEST_TMPDIR}/actual-curl-args"
+
+  run send_message
+
+  assert_success
+  [ "$(cat "${BATS_TEST_TMPDIR}/actual-curl-args")" == '-X POST https://example.com' ]
+  unstub curl
+}
+```
+
+`inspect_args` is a plain shell function, made available inside the `eval`'d plan command the same way `$1`/`$2`/`$@` are — it's not exported, so it won't be visible to a further-nested `bash -c` the plan command spawns.
+
 ### Accepting any (or no) arguments
 
 Sometimes the argument is too complicated to determine in advance, or it would make the stubbing really long and convoluted. In those cases you can use `\*` as a placeholder for one argument position — it matches whatever is there, including nothing at all. The only thing that can still make a call fail to match a plan line with `\*`s in it is passing *more* arguments than the line declares.
