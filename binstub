@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2329  # only called from an eval'd plan string
 set -e
 
 # Assume failure of stubbed command
@@ -6,7 +7,9 @@ status=1
 program="${0##*/}"
 # shellcheck disable=SC2018,SC2019  # anything not A-Z0-9 will be _
 # the "\n" is necessary to avoid adding a trailing _ to the name
-PROGRAM="$(echo "${program}" | tr a-z A-Z | tr -C "A-Z0-9\n" '_')"
+# LC_ALL=C.UTF-8: works around BSD tr silently no-op'ing on non-ASCII
+# under the C locale (macOS-only; Linux tr is unaffected).
+PROGRAM="$(echo "${program}" | LC_ALL=C.UTF-8 tr a-z A-Z | LC_ALL=C.UTF-8 tr -C "A-Z0-9\n" '_')"
 
 if [[ "$PROGRAM" =~ ^[^A-Z_]+(.*)$ ]]; then
   # remove leading non A-Z_ characters to make a valid variable name
@@ -24,6 +27,23 @@ debug() {
   if [ -n "${!_STUB_DEBUG-}" ] ; then
     echo "bats-mock($program): $*" >&"${!_STUB_DEBUG}"
   fi
+}
+
+# Deliberately not export -f'd -- would leak into every command a plan
+# spawns, not just its own eval context.
+inspect_args() {
+  local arg
+  local sep=''
+  for arg; do
+    if [[ $arg == *' '* ]]; then
+      printf '%s"%s"' "$sep" "${arg//\"/\\\"}"
+    elif [[ $arg == *'"'* ]]; then
+      printf "%s'%s'" "$sep" "$arg"
+    else
+      printf '%s%s' "$sep" "$arg"
+    fi
+    sep=" "
+  done
 }
 
 [ -e "${!_STUB_PLAN}" ] || exit 1

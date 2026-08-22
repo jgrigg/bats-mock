@@ -77,7 +77,9 @@ The plan is verified, one by one, as the calls come in, but the final check that
 
 Once the test case is done, you should call `unstub <program>` in order to clean up the temporary files, and make a final check that all the plans have been met for the stub.
 
-By default, `unstub`-ing a program that was never actually `stub`-bed (or was already `unstub`-bed) is itself a failure — it prints `<program> is not stubbed` to stderr and returns 1. If that's expected (e.g. a `teardown` that unconditionally cleans up a stub some earlier test path might not have touched), pass `--allow-missing` as the first argument: `unstub --allow-missing <program>`. Note this only suppresses that specific "never stubbed" case — if the program *was* stubbed and its plan wasn't fulfilled, `unstub --allow-missing` still fails; `--allow-missing` is not a way to skip plan verification.
+By default, `unstub`-ing a program that was never actually `stub`-bed (or was already `unstub`-bed) is itself a failure — it prints `<program> is not stubbed` to stderr and returns 1. If that's expected (e.g. a `teardown` that unconditionally cleans up a stub some earlier test path might not have touched), pass `--allow-missing`: `unstub --allow-missing <program>`. Note this only suppresses that specific "never stubbed" case — if the program *was* stubbed and its plan wasn't fulfilled, `unstub --allow-missing` still fails; `--allow-missing` is not a way to skip plan verification.
+
+For that, there's `--force`: `unstub --force <program>` skips plan verification entirely and always returns 0, regardless of whether the program was ever stubbed, ever invoked, or invoked in a way that didn't match its plan. Cleanup (removing the stub's symlink and state files) still happens as normal. Useful for a `teardown` that just wants stubs gone without asserting anything about how the test used them. `--force` and `--allow-missing` compose in either order if you want both, though `--force` alone already covers everything `--allow-missing` does.
 
 ### Verifying stub input
 
@@ -114,6 +116,50 @@ If you want to verify that your stub was called with the correct arguments, you 
   unstub curl
 }
 ```
+
+For a quick sanity check across all of them at once rather than picking out individual positions, `inspect_args "$@"` formats the full argument list as a single string (space-separated, double-quoting any argument that itself contains a space). Note the escaped `\$(...)`, same as with `\$1`/`\$2` above — it needs to be deferred to when the stub is actually invoked, not expanded immediately by the shell that's setting up the stub:
+
+```bash
+@test "send_message" {
+  stub curl \
+    "-X * * : echo \$(inspect_args \"\$@\") > ${BATS_TEST_TMPDIR}/actual-curl-args"
+
+  run send_message
+
+  assert_success
+  [ "$(cat "${BATS_TEST_TMPDIR}/actual-curl-args")" == '-X POST https://example.com' ]
+  unstub curl
+}
+```
+
+`inspect_args` is a plain shell function, made available inside the `eval`'d plan command the same way `$1`/`$2`/`$@` are — it's not exported, so it won't be visible to a further-nested `bash -c` the plan command spawns.
+
+### Using a function as the plan command
+
+The command portion of a plan line doesn't have to be a literal shell command — it can call a function you've defined, which is handy when the logic needed to produce a realistic response is more than fits comfortably in a one-line plan:
+
+```bash
+respond_based_on_method() {
+  case "$2" in
+    GET) echo '{"result": "cached"}' ;;
+    *) echo '{"result": "ok"}' ;;
+  esac
+}
+export -f respond_based_on_method
+
+@test "GET requests return the cached response" {
+  stub curl "-X * * : respond_based_on_method \"\$@\""
+  run send_request GET https://example.com
+  # ...
+  unstub curl
+}
+```
+
+The `export -f` is required, and easy to miss: the stubbed program runs as a genuinely separate process (`binstub`, reached via the `PATH` symlink `stub` set up), not sourced into your test's shell — so, exactly like any other external command, it only sees functions you've explicitly exported, not ones merely defined earlier in the same test file. A function that isn't exported fails the same way `inspect_args` does when a plan command shells out to a nested `bash -c`: `<function>: command not found`.
+
+If the function needs the actual arguments the stub was called with, forward them explicitly with `"$@"` (escaped the same way as everywhere else in this section, to defer expansion until the stub is actually invoked) — a function doesn't automatically inherit them otherwise, since it's an ordinary function call, not special-cased by `bats-mock`.
+
+**Watch out for self-reference.** If your function calls the *same* command you're stubbing (e.g. stubbing `date` with a function that itself shells out to `date` to build a realistic-looking response), it'll resolve right back through the stub's own `PATH` entry and recurse — the process only stops when it exhausts something (you'll typically see `fork: Resource temporarily unavailable`, not a clean failure). If you need the real thing from inside a replacement, resolve it before `load`ing this library (`REAL_DATE=$(command -v date)`) the same way `stub.bash` itself does for `rm`/`mkdir`/`ln`/`touch`, and call that instead.
 
 ### Accepting any (or no) arguments
 
