@@ -231,7 +231,9 @@ The line is re-checked on every call rather than advancing, so `unstub` never fa
 
 ## Troubleshooting
 
-It can be difficult to figure out why your mock has failed. You can enable debugging by setting an environment variable named after the command being stubbed (all in underscore-separated, uppercase) with the `STUB_DEBUG` suffix. The value of the variable needs to be a device or already-open file descriptor where to redirect the debugging output.
+When `unstub` fails it reports why on stderr: plan lines that were never reached, and calls that didn't match one, with the arguments actually received. `unstub --force` skips this along with everything else.
+
+For more detail, enable debugging by setting an environment variable named after the command being stubbed (all in underscore-separated, uppercase) with the `STUB_DEBUG` suffix. The value of the variable needs to be a device or already-open file descriptor where to redirect the debugging output.
 
 Note that bats keeps fd 3 open for its own output, so don't close it yourself; and a file path is truncated on every write, leaving only the most recent line.
 
@@ -245,9 +247,9 @@ export DATE_STUB_DEBUG=3
 
 (You may want to know this, if you get weird results there may be stray files lingering about messing with your state.)
 
-Under the covers, `bats-mock` is two scripts (`stub.bash`, which you `load`, and `binstub`, which does the actual matching) plus, per stub, two state files that `binstub` manages.
+Under the covers, `bats-mock` is two scripts (`stub.bash`, which you `load`, and `binstub`, which does the actual matching) plus, per stub, a few state files that `binstub` manages.
 
-First, it is the command (or program) itself, which when the stub is created is placed in (or rather, the `binstub` script is sym-linked to) `${BATS_MOCK_BINDIR}/${program}` (which is added to your `PATH` when loading the stub library). Secondly, it creates a stub plan, based on the arguments passed when creating the stub, and finally, during execution, the command invocations are tracked in a stub run file which is checked once the command is `unstub`'ed. The `${program}-stub-[plan|run]` files are both in `${BATS_MOCK_TMPDIR}`.
+First, it is the command (or program) itself, which when the stub is created is placed in (or rather, the `binstub` script is sym-linked to) `${BATS_MOCK_BINDIR}/${program}` (which is added to your `PATH` when loading the stub library). Secondly, it creates a stub plan, based on the arguments passed when creating the stub, and finally, during execution, the command invocations are tracked in a stub run file which is checked once the command is `unstub`'ed, alongside a stub errors file recording any call that didn't match. The `${program}-stub-[plan|run|errors]` files are all in `${BATS_MOCK_TMPDIR}`.
 
 `BATS_MOCK_TMPDIR` is `$BATS_TEST_TMPDIR`, so stub state is isolated per test, which is what makes it safe under `bats --jobs`. This requires bats-core >= 1.4.0.
 
