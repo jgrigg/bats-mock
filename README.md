@@ -134,6 +134,33 @@ For a quick sanity check across all of them at once rather than picking out indi
 
 `inspect_args` is a plain shell function, made available inside the `eval`'d plan command the same way `$1`/`$2`/`$@` are — it's not exported, so it won't be visible to a further-nested `bash -c` the plan command spawns.
 
+### Using a function as the plan command
+
+The command portion of a plan line doesn't have to be a literal shell command — it can call a function you've defined, which is handy when the logic needed to produce a realistic response is more than fits comfortably in a one-line plan:
+
+```bash
+respond_based_on_method() {
+  case "$2" in
+    GET) echo '{"result": "cached"}' ;;
+    *) echo '{"result": "ok"}' ;;
+  esac
+}
+export -f respond_based_on_method
+
+@test "GET requests return the cached response" {
+  stub curl "-X * * : respond_based_on_method \"\$@\""
+  run send_request GET https://example.com
+  # ...
+  unstub curl
+}
+```
+
+The `export -f` is required, and easy to miss: the stubbed program runs as a genuinely separate process (`binstub`, reached via the `PATH` symlink `stub` set up), not sourced into your test's shell — so, exactly like any other external command, it only sees functions you've explicitly exported, not ones merely defined earlier in the same test file. A function that isn't exported fails the same way `inspect_args` does when a plan command shells out to a nested `bash -c`: `<function>: command not found`.
+
+If the function needs the actual arguments the stub was called with, forward them explicitly with `"$@"` (escaped the same way as everywhere else in this section, to defer expansion until the stub is actually invoked) — a function doesn't automatically inherit them otherwise, since it's an ordinary function call, not special-cased by `bats-mock`.
+
+**Watch out for self-reference.** If your function calls the *same* command you're stubbing (e.g. stubbing `date` with a function that itself shells out to `date` to build a realistic-looking response), it'll resolve right back through the stub's own `PATH` entry and recurse — the process only stops when it exhausts something (you'll typically see `fork: Resource temporarily unavailable`, not a clean failure). If you need the real thing from inside a replacement, resolve it before `load`ing this library (`REAL_DATE=$(command -v date)`) the same way `stub.bash` itself does for `rm`/`mkdir`/`ln`/`touch`, and call that instead.
+
 ### Accepting any (or no) arguments
 
 Sometimes the argument is too complicated to determine in advance, or it would make the stubbing really long and convoluted. In those cases you can use `\*` as a placeholder for one argument position — it matches whatever is there, including nothing at all. The only thing that can still make a call fail to match a plan line with `\*`s in it is passing *more* arguments than the line declares.
