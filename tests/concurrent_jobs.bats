@@ -7,7 +7,9 @@ generate_stubbed_test_file() {
   local cmd_to_stub="$2"
   local output_file="$3"
   local bats_test_placeholder="@test"
-  echo "load '$(cd "${BATS_TEST_DIRNAME}/.." && echo "$(pwd)/stub")'" >"${output_file}"
+  # The .bash suffix must be explicit: bats-core's load() only auto-appends
+  # it for BATS_TEST_DIRNAME-relative paths, not absolute ones.
+  echo "load '$(cd "${BATS_TEST_DIRNAME}/.." && echo "$(pwd)/stub.bash")'" >"${output_file}"
 
   local test_number
   for test_number in $(seq 1 "${num_tests}"); do

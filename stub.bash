@@ -17,7 +17,8 @@ stub() {
   local prefix
   # shellcheck disable=SC2018,SC2019  # anything not A-Z0-9 will be _
   # the "\n" is necessary to avoid adding a trailing _ to the name
-  prefix="$(echo "$program" | tr a-z A-Z | tr -C "A-Z0-9\n" '_')"
+  # LC_ALL=C.UTF-8: see the matching comment in binstub.
+  prefix="$(echo "$program" | LC_ALL=C.UTF-8 tr a-z A-Z | LC_ALL=C.UTF-8 tr -C "A-Z0-9\n" '_')"
   shift
 
 
@@ -48,7 +49,8 @@ unstub() {
   local prefix
   # shellcheck disable=SC2018,SC2019  # anything not A-Z0-9 will be _
   # the "\n" is necessary to avoid adding a trailing _ to the name
-  prefix="$(echo "${program}" | tr a-z A-Z | tr -C "A-Z0-9\n" '_')"
+  # LC_ALL=C.UTF-8: see the matching comment in binstub.
+  prefix="$(echo "${program}" | LC_ALL=C.UTF-8 tr a-z A-Z | LC_ALL=C.UTF-8 tr -C "A-Z0-9\n" '_')"
 
   if [[ "$prefix" =~ ^[^A-Z_]+(.*)$ ]]; then
     # remove leading non A-Z_ characters to make a valid variable name
